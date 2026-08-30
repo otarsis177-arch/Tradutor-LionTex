@@ -1,6 +1,8 @@
 plugins {
   alias(libs.plugins.android.application)
   alias(libs.plugins.kotlin.compose)
+  alias(libs.plugins.kotlin.serialization)
+  alias(libs.plugins.secrets)
 }
 
 android {
@@ -30,7 +32,13 @@ android {
 
   buildFeatures {
     compose = true
+    buildConfig = true
   }
+}
+
+secrets {
+  propertiesFileName = ".env"
+  defaultPropertiesFileName = ".env.example"
 }
 
 dependencies {
@@ -47,6 +55,13 @@ dependencies {
   implementation(libs.kotlinx.coroutines.android)
   implementation(libs.kotlinx.coroutines.play.services)
   implementation(libs.mlkit.text.recognition)
+
+  // Networking, Serialization & AI REST
+  implementation(libs.kotlinx.serialization.json)
+  implementation(libs.retrofit)
+  implementation(libs.retrofit.converter.serialization)
+  implementation(libs.okhttp)
+  implementation(libs.okhttp.logging)
 
   testImplementation(libs.junit)
   androidTestImplementation(platform(libs.androidx.compose.bom))

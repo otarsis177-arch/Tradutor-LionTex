@@ -58,7 +58,9 @@ data class TranslationResult(
   val detectedLang: Language,
   val confidenceScore: Float = 0.95f,
   val contextualExplanation: String = "",
-  val timestamp: Long = System.currentTimeMillis()
+  val timestamp: Long = System.currentTimeMillis(),
+  val isAiPowered: Boolean = false,
+  val engineName: String = "Offline"
 )
 
 data class HistoryItem(

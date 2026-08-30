@@ -8,8 +8,10 @@ import android.os.Build
 import android.provider.MediaStore
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.tarsis.liontex.data.ai.GeminiTranslationService
 import com.tarsis.liontex.data.local.HistoryRepository
 import com.tarsis.liontex.data.local.LionTexDatabaseHelper
+import com.tarsis.liontex.data.network.NetworkMonitor
 import com.tarsis.liontex.data.ocr.MlKitOcrEngine
 import com.tarsis.liontex.data.translation.StudyBreakdownEngine
 import com.tarsis.liontex.data.translation.TranslationEngine
@@ -21,8 +23,10 @@ import com.tarsis.liontex.domain.model.OcrResult
 import com.tarsis.liontex.domain.model.StudyBreakdown
 import com.tarsis.liontex.domain.model.TranslationResult
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.util.Locale
 
@@ -31,6 +35,10 @@ class TranslationViewModel(application: Application) : AndroidViewModel(applicat
   private val dbHelper = LionTexDatabaseHelper(application)
   val repository = HistoryRepository(dbHelper)
   val ttsManager = LionTexTtsManager(application)
+  private val networkMonitor = NetworkMonitor(application)
+
+  val isOnline: StateFlow<Boolean> = networkMonitor.isOnlineFlow
+    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), networkMonitor.isOnline)
 
   // Estados de Tradução de Texto
   private val _inputText = MutableStateFlow("I have been studying English for two years.")
@@ -42,11 +50,21 @@ class TranslationViewModel(application: Application) : AndroidViewModel(applicat
   private val _targetLanguage = MutableStateFlow(Language.PORTUGUESE)
   val targetLanguage: StateFlow<Language> = _targetLanguage.asStateFlow()
 
+  private val _isTranslating = MutableStateFlow(false)
+  val isTranslating: StateFlow<Boolean> = _isTranslating.asStateFlow()
+
   private val _translationResult = MutableStateFlow<TranslationResult?>(null)
   val translationResult: StateFlow<TranslationResult?> = _translationResult.asStateFlow()
 
   private val _studyBreakdown = MutableStateFlow<StudyBreakdown?>(null)
   val studyBreakdown: StateFlow<StudyBreakdown?> = _studyBreakdown.asStateFlow()
+
+  private val _isStudyLoading = MutableStateFlow(false)
+  val isStudyLoading: StateFlow<Boolean> = _isStudyLoading.asStateFlow()
+
+  // Preferência por IA ativada
+  private val _useAiMode = MutableStateFlow(true)
+  val useAiMode: StateFlow<Boolean> = _useAiMode.asStateFlow()
 
   // Estados de OCR e Imagem
   private val _selectedImageUri = MutableStateFlow<Uri?>(null)
@@ -91,6 +109,10 @@ class TranslationViewModel(application: Application) : AndroidViewModel(applicat
     _targetLanguage.value = language
   }
 
+  fun toggleAiMode(enabled: Boolean) {
+    _useAiMode.value = enabled
+  }
+
   fun swapLanguages() {
     val currentSource = _sourceLanguage.value
     val currentTarget = _targetLanguage.value
@@ -115,28 +137,77 @@ class TranslationViewModel(application: Application) : AndroidViewModel(applicat
       return
     }
 
-    val result = TranslationEngine.translate(
-      text = text,
-      sourceLanguage = _sourceLanguage.value,
-      targetLanguage = _targetLanguage.value
-    )
+    _isTranslating.value = true
 
-    _translationResult.value = result
+    viewModelScope.launch {
+      val online = networkMonitor.isOnline
+      val shouldUseAi = _useAiMode.value && online && GeminiTranslationService.isAiAvailable()
 
-    // Gera o breakdown gramatical para o Modo Estudo
-    val study = StudyBreakdownEngine.analyzeSentence(result.originalText, result.translatedText)
-    _studyBreakdown.value = study
+      var finalResult: TranslationResult? = null
 
-    if (saveToHistory) {
-      viewModelScope.launch {
-        repository.saveTranslation(
-          original = result.originalText,
-          translated = result.translatedText,
-          sourceLang = result.sourceLang.code,
-          targetLang = result.targetLang.code,
-          sourceMode = "text"
+      if (shouldUseAi) {
+        val aiResult = GeminiTranslationService.translateWithAi(
+          text = text,
+          sourceLanguage = _sourceLanguage.value,
+          targetLanguage = _targetLanguage.value
+        )
+
+        aiResult.onSuccess { res ->
+          finalResult = res
+        }.onFailure {
+          // Fallback gracioso para o motor local robusto
+          finalResult = TranslationEngine.translate(
+            text = text,
+            sourceLanguage = _sourceLanguage.value,
+            targetLanguage = _targetLanguage.value
+          )
+        }
+      } else {
+        finalResult = TranslationEngine.translate(
+          text = text,
+          sourceLanguage = _sourceLanguage.value,
+          targetLanguage = _targetLanguage.value
         )
       }
+
+      finalResult?.let { res ->
+        _translationResult.value = res
+        _isTranslating.value = false
+
+        // Carrega a análise pedagógica (IA se online ou fallback local)
+        loadStudyBreakdown(res.originalText, res.translatedText, shouldUseAi)
+
+        if (saveToHistory) {
+          repository.saveTranslation(
+            original = res.originalText,
+            translated = res.translatedText,
+            sourceLang = res.sourceLang.code,
+            targetLang = res.targetLang.code,
+            sourceMode = if (res.isAiPowered) "ai_text" else "text"
+          )
+        }
+      } ?: run {
+        _isTranslating.value = false
+      }
+    }
+  }
+
+  private fun loadStudyBreakdown(original: String, translated: String, useAi: Boolean) {
+    _isStudyLoading.value = true
+    viewModelScope.launch {
+      if (useAi) {
+        val aiStudy = GeminiTranslationService.generateStudyBreakdownWithAi(original, translated)
+        aiStudy.onSuccess { breakdown ->
+          _studyBreakdown.value = breakdown
+          _isStudyLoading.value = false
+          return@launch
+        }
+      }
+
+      // Fallback local
+      val localStudy = StudyBreakdownEngine.analyzeSentence(original, translated)
+      _studyBreakdown.value = localStudy
+      _isStudyLoading.value = false
     }
   }
 

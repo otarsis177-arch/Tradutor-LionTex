@@ -73,6 +73,7 @@ fun StudyDetailScreen(
   modifier: Modifier = Modifier
 ) {
   val studyBreakdown by viewModel.studyBreakdown.collectAsState()
+  val isStudyLoading by viewModel.isStudyLoading.collectAsState()
   val flashcards by viewModel.flashcardsList.collectAsState()
 
   var selectedTab by remember { mutableIntStateOf(0) }
@@ -114,7 +115,25 @@ fun StudyDetailScreen(
 
       if (selectedTab == 0) {
         // Tab 1: Análise Gramatical
-        if (studyBreakdown == null) {
+        if (isStudyLoading) {
+          Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+          ) {
+            Column(
+              modifier = Modifier.padding(32.dp),
+              horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+              androidx.compose.material3.CircularProgressIndicator(
+                modifier = Modifier.size(36.dp),
+                color = MaterialTheme.colorScheme.primary
+              )
+              Spacer(modifier = Modifier.height(12.dp))
+              Text("Aprofundando análise pedagógica com IA...", textAlign = TextAlign.Center)
+            }
+          }
+        } else if (studyBreakdown == null) {
           Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(20.dp),
@@ -178,6 +197,15 @@ fun StudyDetailScreen(
                 text = study.fullTranslation,
                 style = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.primary)
               )
+
+              if (study.alternativeTranslations.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                  text = "Outras formas: ${study.alternativeTranslations.joinToString(" • ")}",
+                  style = MaterialTheme.typography.bodySmall,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+              }
 
               Spacer(modifier = Modifier.height(14.dp))
               HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))

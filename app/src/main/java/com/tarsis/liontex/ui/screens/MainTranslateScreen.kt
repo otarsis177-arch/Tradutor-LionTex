@@ -1,6 +1,5 @@
 package com.tarsis.liontex.ui.screens
 
-import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import androidx.compose.animation.AnimatedVisibility
@@ -27,20 +26,24 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.CloudDone
+import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ContentPaste
+import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Star
-import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -79,6 +82,9 @@ fun MainTranslateScreen(
   val sourceLang by viewModel.sourceLanguage.collectAsState()
   val targetLang by viewModel.targetLanguage.collectAsState()
   val result by viewModel.translationResult.collectAsState()
+  val isTranslating by viewModel.isTranslating.collectAsState()
+  val isOnline by viewModel.isOnline.collectAsState()
+  val useAiMode by viewModel.useAiMode.collectAsState()
   val feedbackMsg by viewModel.userFeedbackMessage.collectAsState()
 
   val clipboardManager = LocalClipboardManager.current
@@ -126,6 +132,55 @@ fun MainTranslateScreen(
         }
       }
 
+      // Barra de Status Online / IA + Seletor de Idiomas
+      Row(
+        modifier = Modifier
+          .fillMaxWidth()
+          .padding(bottom = 8.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+      ) {
+        // Indicador de Conexão
+        Row(verticalAlignment = Alignment.CenterVertically) {
+          Icon(
+            imageVector = if (isOnline) Icons.Default.CloudDone else Icons.Default.CloudOff,
+            contentDescription = if (isOnline) "Conectado à Internet" else "Modo Offline",
+            tint = if (isOnline) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+            modifier = Modifier.size(18.dp)
+          )
+          Spacer(modifier = Modifier.width(6.dp))
+          Text(
+            text = if (isOnline) "Online" else "Offline",
+            style = MaterialTheme.typography.labelMedium,
+            color = if (isOnline) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+            fontWeight = FontWeight.Medium
+          )
+        }
+
+        // Chip de alternância de IA
+        FilterChip(
+          selected = useAiMode,
+          onClick = { viewModel.toggleAiMode(!useAiMode) },
+          label = {
+            Text(
+              text = if (useAiMode) "IA Gemini Ativa" else "Motor Offline",
+              style = MaterialTheme.typography.labelSmall
+            )
+          },
+          leadingIcon = {
+            Icon(
+              imageVector = if (useAiMode) Icons.Default.AutoAwesome else Icons.Default.Psychology,
+              contentDescription = null,
+              modifier = Modifier.size(16.dp)
+            )
+          },
+          colors = FilterChipDefaults.filterChipColors(
+            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+          )
+        )
+      }
+
       // Seletor de Idiomas (Origem <-> Destino)
       LanguageSelectorBar(
         sourceLang = sourceLang,
@@ -150,7 +205,7 @@ fun MainTranslateScreen(
           OutlinedTextField(
             value = inputText,
             onValueChange = { viewModel.updateInputText(it) },
-            placeholder = { Text("Digite, cole ou capture um texto para traduzir...") },
+            placeholder = { Text("Digite, cole ou capture um texto para traduzir com IA...") },
             modifier = Modifier
               .fillMaxWidth()
               .height(140.dp)
@@ -207,9 +262,26 @@ fun MainTranslateScreen(
             Button(
               onClick = { viewModel.performTranslation(saveToHistory = true) },
               shape = RoundedCornerShape(12.dp),
+              enabled = !isTranslating && inputText.isNotBlank(),
               modifier = Modifier.testTag("translate_submit_button")
             ) {
-              Text("Traduzir", fontWeight = FontWeight.SemiBold)
+              if (isTranslating) {
+                CircularProgressIndicator(
+                  modifier = Modifier.size(18.dp),
+                  color = MaterialTheme.colorScheme.onPrimary,
+                  strokeWidth = 2.dp
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Traduzindo...")
+              } else {
+                Icon(
+                  imageVector = if (useAiMode && isOnline) Icons.Default.AutoAwesome else Icons.Default.SwapHoriz,
+                  contentDescription = null,
+                  modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("Traduzir", fontWeight = FontWeight.SemiBold)
+              }
             }
           }
         }
@@ -235,14 +307,30 @@ fun MainTranslateScreen(
               horizontalArrangement = Arrangement.SpaceBetween,
               verticalAlignment = Alignment.CenterVertically
             ) {
-              Text(
-                text = "TRADUÇÃO (${res.targetLang.displayName.uppercase()})",
-                style = MaterialTheme.typography.labelMedium.copy(
-                  fontWeight = FontWeight.Bold,
-                  letterSpacing = 1.sp,
-                  color = MaterialTheme.colorScheme.primary
+              Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                  text = "TRADUÇÃO (${res.targetLang.displayName.uppercase()})",
+                  style = MaterialTheme.typography.labelMedium.copy(
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.sp,
+                    color = MaterialTheme.colorScheme.primary
+                  )
                 )
-              )
+                if (res.isAiPowered) {
+                  Spacer(modifier = Modifier.width(8.dp))
+                  Surface(
+                    shape = RoundedCornerShape(6.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer
+                  ) {
+                    Text(
+                      text = "IA",
+                      style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                      color = MaterialTheme.colorScheme.onPrimaryContainer,
+                      modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                    )
+                  }
+                }
+              }
 
               Row {
                 IconButton(
