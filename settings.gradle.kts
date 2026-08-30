@@ -22,6 +22,6 @@ dependencyResolutionManagement {
   }
 }
 
-rootProject.name = "Tradutor LionTex"
+rootProject.name = "Tradutor Liontex"
 
 include(":app")

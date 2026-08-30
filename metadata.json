@@ -1,6 +1,6 @@
 {
-  "name": "Tradutor LionTex",
-  "description": "Aplicativo de tradução inteligente e aprendizado de inglês com OCR e estudo contextual",
+  "name": "Tradutor Liontex",
+  "description": "Aplicativo Android pessoal para tradução e estudo de inglês.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
